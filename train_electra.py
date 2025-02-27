@@ -3,7 +3,7 @@ import torch
 import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
-from datasets import Dataset
+from torch.utils.data import Dataset
 
 TRAIN_PATH = "data/train_data.csv"
 VAL_PATH = "data/val_data.csv"
