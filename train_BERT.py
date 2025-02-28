@@ -1,5 +1,9 @@
 import pandas as pd
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.utils import shuffle
 from torch.utils.data import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 from transformers import (
@@ -7,7 +11,7 @@ from transformers import (
     BertTokenizer,
     Trainer,
     TrainingArguments,
-    EarlyStoppingCallback,
+    TrainerCallback,
     IntervalStrategy,
 )
 
@@ -23,7 +27,7 @@ print(f"Using device: {device}")
 def compute_metrics(pred):
     labels = pred.label_ids
     preds = pred.predictions.argmax(-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary", zero_division=0)
     acc = accuracy_score(labels, preds)
     return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
@@ -72,9 +76,35 @@ def load_data():
 
     pos = sum(y_train)
     neg = len(y_train) - pos
-    print(f"Class distribution - Positive: {pos}, Negative: {neg}, Ratio: {pos / neg:.3f}")
+    print(f"Class distribution - Positive: {pos}, Negative: {neg}, Ratio: {pos / (neg+1e-6):.3f}")
 
     return X_train, y_train, X_val, y_val, X_test, y_test
+
+# Custom callback to log F1 scores during evaluation
+class F1LoggerCallback(TrainerCallback):
+    def __init__(self):
+        self.eval_steps = []
+        self.f1_scores = []
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        # metrics keys are prefixed with "eval_"
+        if metrics and "eval_f1" in metrics:
+            self.eval_steps.append(state.global_step)
+            self.f1_scores.append(metrics["eval_f1"])
+        return control
+
+# Function to plot F1 learning curve
+def plot_f1_learning_curve(steps, f1_scores, filename="BERT_f1_learning_curve.png"):
+    plt.figure(figsize=(8, 6))
+    plt.plot(steps, f1_scores, marker="o", label="Validation F1 Score")
+    plt.xlabel("Global Step")
+    plt.ylabel("F1 Score")
+    plt.title("Learning Curve (F1 Score)")
+    plt.ylim(0.0, 1.0)
+    plt.grid(True)
+    plt.legend()
+    plt.savefig(filename)
+    plt.show()
 
 def main():
     # Load tokenizer and model (BERT)
@@ -84,6 +114,9 @@ def main():
     
     # Load data
     X_train, y_train, X_val, y_val, X_test, y_test = load_data()
+
+    # Shuffle the training data
+    X_train, y_train = shuffle(X_train, y_train, random_state=42)
 
     # Create dataset objects
     train_dataset = PatronizingDataset(X_train, y_train, tokenizer)
@@ -98,30 +131,33 @@ def main():
         per_device_eval_batch_size=64,
         logging_dir="./logs",
         learning_rate=2e-5,
-        evaluation_strategy="steps",
+        evaluation_strategy="steps",  # Evaluate every fixed number of steps
         eval_steps=100,
         save_steps=100,
         logging_steps=10,
-        load_best_model_at_end=False,         # Not using early stopping, so no best model tracking
-        fp16=torch.cuda.is_available(),       # Mixed precision if GPU is available
-        report_to=["tensorboard"],            # Logging to TensorBoard (can be set to [] if not needed)
+        load_best_model_at_end=False,  # Not using early stopping here
+        fp16=torch.cuda.is_available(),  # Mixed precision if GPU is available
+        report_to=["tensorboard"],
     )
 
+    # Initialize our custom F1 callback
+    f1_callback = F1LoggerCallback()
 
-    # Initialize Trainer with early stopping
+    # Initialize Trainer with the callback
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
+        callbacks=[f1_callback],
     )
 
     # Train the model
     print("Starting training...")
     trainer.train()
 
-    # Evaluate on validation set (using Trainer's evaluate)
+    # Evaluate on validation set
     print("\n=== Validation Performance ===")
     val_results = trainer.evaluate(val_dataset)
     print("Validation results:", val_results)
@@ -143,6 +179,10 @@ def main():
     trainer.save_model(model_path)
     tokenizer.save_pretrained(model_path)
     print(f"Model saved to {model_path}")
+
+    # Plot the F1 learning curve (using the data logged by our callback)
+    print("\n=== Plotting F1 Learning Curve ===")
+    plot_f1_learning_curve(f1_callback.eval_steps, f1_callback.f1_scores, filename="f1_learning_curve.png")
 
 if __name__ == "__main__":
     main()
