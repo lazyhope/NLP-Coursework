@@ -1,10 +1,10 @@
 {
-    "learning_rate": 7.2350323349845944e-06,
+    "learning_rate": 2e-05,
     "per_device_train_batch_size": 64,
-    "weight_decay": 0.13363219467561877,
-    "warmup_ratio": 0.0702602993440776,
-    "num_train_epochs": 12,
-    "seed": 17,
+    "weight_decay": 0.1,
+    "warmup_ratio": 0.05,
+    "num_train_epochs": 5,
+    "seed": 42,
     "gradient_accumulation_steps": 4,
     "lr_scheduler_type": "cosine_with_restarts"
 }
