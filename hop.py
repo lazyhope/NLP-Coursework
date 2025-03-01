@@ -103,14 +103,22 @@ def model_init():
 def optuna_hp_space(trial: optuna.Trial):
     """Define the hyperparameter search space for Optuna."""
     return {
-        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
+        "learning_rate": trial.suggest_categorical(
+            "learning_rate", [1e-6, 5e-6, 1e-5, 2e-5, 5e-5, 1e-4]
+        ),
         "per_device_train_batch_size": trial.suggest_categorical(
             "per_device_train_batch_size", [8, 16, 32, 64]
         ),
-        "weight_decay": trial.suggest_float("weight_decay", 0.0, 0.2),
-        "warmup_ratio": trial.suggest_float("warmup_ratio", 0.0, 0.3),
-        "num_train_epochs": trial.suggest_int("num_train_epochs", 2, 20),
-        "seed": trial.suggest_int("seed", 0, 42),
+        "weight_decay": trial.suggest_categorical(
+            "weight_decay", [0.0, 0.01, 0.05, 0.1, 0.15, 0.2]
+        ),
+        "warmup_ratio": trial.suggest_categorical(
+            "warmup_ratio", [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+        ),
+        "num_train_epochs": trial.suggest_categorical(
+            "num_train_epochs", [2, 3, 5, 7, 10, 15, 20]
+        ),
+        "seed": trial.suggest_categorical("seed", [0, 21, 42]),
         "gradient_accumulation_steps": trial.suggest_categorical(
             "gradient_accumulation_steps", [1, 2, 4]
         ),
@@ -198,7 +206,7 @@ def main():
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
             compute_metrics=compute_metrics,
-            callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=5)],
             model_init=model_init,
         )
 
@@ -207,6 +215,7 @@ def main():
             direction="maximize",
             backend="optuna",
             hp_space=optuna_hp_space,
+            hp_name=lambda trial: f"trial_{trial.number}",
             n_trials=args.n_trials,
             compute_objective=compute_objective,
         )
