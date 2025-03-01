@@ -125,12 +125,12 @@ def plot_f1_learning_curve(steps, train_f1, val_f1, filename="BERT_f1_learning_c
     plt.figure(figsize=(8, 6))
     plt.plot(steps, train_f1, marker="o", label="Training F1 Score")
     plt.plot(steps, val_f1, marker="o", label="Validation F1 Score")
-    plt.xlabel("Epoch")
-    plt.ylabel("F1 Score")
-    plt.title("Learning Curve (F1 Score) of BERT")
-    plt.ylim(0.0, 1.0)
+    plt.xlabel("Global Step", fontsize=16)
+    plt.ylabel("F1 Score", fontsize=16)
+    plt.title("Learning Curve (F1 Score) - BERT", fontsize=18)
+    plt.ylim(0.0, 1.1)
     plt.grid(True)
-    plt.legend()
+    plt.legend(fontsize=16)
     plt.savefig(filename)
     plt.show()
 
@@ -214,7 +214,7 @@ def main():
     # Plot the F1 learning curve using data logged by our callback
     print("\n=== Plotting F1 Learning Curve ===")
     plot_f1_learning_curve(f1_callback.eval_steps, f1_callback.train_f1_scores, f1_callback.val_f1_scores,
-                             filename="BERT_f1_learning_curve.png")
+                             filename="figures/BERT_f1_learning_curve.png")
 
 if __name__ == "__main__":
     main()
