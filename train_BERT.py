@@ -97,21 +97,24 @@ def load_data():
 class F1LoggerCallback(TrainerCallback):
     def __init__(self, train_dataset):
         self.train_dataset = train_dataset
+        self.trainer = None  # to be set manually later
         self.eval_steps = []
         self.val_f1_scores = []
         self.train_f1_scores = []
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        trainer = kwargs.get("trainer")
         # Log validation F1 (assumes compute_metrics returns "eval_f1")
         if metrics and "eval_f1" in metrics:
             self.eval_steps.append(state.global_step)
             self.val_f1_scores.append(metrics["eval_f1"])
-        # Also compute training F1 using trainer.predict on the training dataset
-        train_output = trainer.predict(self.train_dataset)
+        # Use the attached trainer to compute training F1
+        train_output = self.trainer.predict(self.train_dataset)
         train_preds = train_output.predictions.argmax(-1)
         train_labels = train_output.label_ids
-        train_metrics = compute_metrics(type("obj", (object,), {"label_ids": train_labels, "predictions": train_output.predictions}))
+        # Create an object mimicking the expected structure for compute_metrics
+        train_metrics = compute_metrics(
+            type("obj", (object,), {"label_ids": train_labels, "predictions": train_output.predictions})
+        )
         self.train_f1_scores.append(train_metrics["f1"])
         return control
 
@@ -124,7 +127,7 @@ def plot_f1_learning_curve(steps, train_f1, val_f1, filename="BERT_f1_learning_c
     plt.plot(steps, val_f1, marker="o", label="Validation F1 Score")
     plt.xlabel("Epoch")
     plt.ylabel("F1 Score")
-    plt.title('Learning Curve (F1 Score) of BERT')
+    plt.title("Learning Curve (F1 Score) of BERT")
     plt.ylim(0.0, 1.0)
     plt.grid(True)
     plt.legend()
@@ -171,15 +174,17 @@ def main():
     # Initialize our custom F1 callback with the training dataset
     f1_callback = F1LoggerCallback(train_dataset)
 
-    # Initialize Trainer with the callback
+    # Initialize Trainer without callbacks first
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
-        callbacks=[f1_callback],
     )
+    # Manually attach the trainer to our callback and add the callback to trainer
+    f1_callback.trainer = trainer
+    trainer.add_callback(f1_callback)
 
     # Train the model (this trains only once, logging eval metrics periodically)
     print("Starting training...")
@@ -209,7 +214,7 @@ def main():
     # Plot the F1 learning curve using data logged by our callback
     print("\n=== Plotting F1 Learning Curve ===")
     plot_f1_learning_curve(f1_callback.eval_steps, f1_callback.train_f1_scores, f1_callback.val_f1_scores,
-                             filename="BERT_learning_curve.png")
+                             filename="BERT_f1_learning_curve.png")
 
 if __name__ == "__main__":
     main()
