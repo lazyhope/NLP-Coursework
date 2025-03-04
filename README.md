@@ -1,8 +1,15 @@
 The given commands should be run under the repository root.
 
+## Download Our best model
+
+To download our best model, run:
+```bash
+curl -L https://huggingface.co/Lazyhope/roberta-pcl/resolve/main/best_freezed.pt?download=true -o checkpoints/best_freezed.pt
+```
+
 ## Training
 
-To train the model, run:
+To train the model from scratch, run:
 ```bash
 python -m train.train_freezed
 ```
