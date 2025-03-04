@@ -237,8 +237,8 @@ def main():
         print(f"\nTraining completed! Best validation F1: {best_f1:.4f}")
 
         # Save best model
-        torch.save(best_model_state, "best_freezed.pt")
-        print("Best model saved to best_freezed.pt")
+        torch.save(best_model_state, "checkpoints/best_freezed.pt")
+        print("Best model saved to checkpoints/best_freezed.pt")
 
     # Load best model for testing
     model.load_state_dict(best_model_state)
