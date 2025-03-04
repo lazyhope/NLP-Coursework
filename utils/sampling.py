@@ -4,7 +4,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
-RATIO = 0.5
 
 # Helper function to vectorize text data
 def _vectorize_text(data):
@@ -31,18 +30,56 @@ def _generate_text(X_resampled, vectorizer, X_original, text_data):
 
 # Sampling strategy
 
-# 1) Copying
-def copy_upsampling(data):
+# Copying
+def copy_upsampling(data, RATIO=0.5):
+    """
+    Upsample the minority class (label 1) so that its total count becomes half of the majority class (label 0).
+    The newly sampled instances are marked with new=1, while original instances are marked with new=0.
+    
+    Args:
+        data (pd.DataFrame): Input DataFrame containing at least the "label" column.
+        RATIO (float): The target ratio of minority samples to majority samples (default 0.5).
+    
+    Returns:
+        pd.DataFrame: DataFrame with upsampled minority class and a new column "new".
+    """
+    # Separate the data into minority (label 1) and majority (label 0) samples
+    pos = data[data["label"] == 1].copy()
+    neg = data[data["label"] == 0].copy()
+    
+    # Mark all original samples with new = 0
+    data_copy = data.copy()
+    data_copy["new"] = 0
+    
+    # Compute target number for minority class: RATIO * number of majority samples
+    target_count = int(len(neg) * RATIO)
+    
+    # If the current minority count is less than the target, sample additional rows from minority class
+    if len(pos) < target_count:
+        additional_needed = target_count - len(pos)
+        pos_additional = pos.sample(n=additional_needed, replace=True, random_state=42)
+        pos_additional["new"] = 1  # Mark newly sampled data as new
+        # Combine the original pos with the additional samples
+        pos_upsampled = pd.concat([pos, pos_additional], ignore_index=True)
+    else:
+        pos_upsampled = pos.copy()
+    
+    # Combine upsampled minority samples with majority samples (both already have new=0 for original majority)
+    final_df = pd.concat([pos_upsampled, neg], ignore_index=True)
+    return final_df
+
+# Down Sampling
+def downsampling(data):
     pos = data[data["label"] == 1]
     neg = data[data["label"] == 0]
-    ratio = int(len(neg) // len(pos) * RATIO)
+    ratio = len(pos) * 2
 
-    print(f"Copying minority samples with ratio: {ratio}...")
-    pos = pd.concat([pos]*ratio, ignore_index=True)
+    print(f"Selecting the first {ratio} majority samples...")
+    neg = neg.iloc[:ratio]
     
     return pd.concat([pos, neg], ignore_index=True)
 
-# 2) SMOTE
+# SMOTE
 def smote_upsampling(data, RATIO=0.5):
     """
     Apply SMOTE upsampling and mark new samples as 'new=1'.
@@ -70,7 +107,7 @@ def smote_upsampling(data, RATIO=0.5):
 
     return pd.concat([original_data, new_data], ignore_index=True)
 
-# 3) ADASYN
+# ADASYN
 def adasyn_upsampling(data, RATIO=0.5):
     """
     Apply ADASYN upsampling and mark new samples as 'new=1'.

@@ -11,7 +11,7 @@ def _synonym_replacement(text):
     :return: Augmented sentence
     """
     words = text.split()
-    n = len(words) // 2
+    n = 10
     new_words = words.copy()
     
     # 获取有同义词的单词索引
@@ -44,37 +44,78 @@ def apply_synonym_replacement(df):
 
     df_modified = df.copy()  # Copy DataFrame
     mask = df_modified["new"] == 1  # Only new samples
-    df_modified.loc[mask, "text"] = df_modified.loc[mask, "text"].apply(lambda x: synonym_replacement(x))
+    df_modified.loc[mask, "text"] = df_modified.loc[mask, "text"].apply(lambda x: _synonym_replacement(x))
     return df_modified
 
-def _back_translate(text):
+def apply_back_translation(df, src_lang="en", tgt_lang="fr", text_col="text"):
     """
-    Translate text to another language and back for augmentation.
+    Apply back-translation only to rows with new==1 in the DataFrame.
+    Loads translation models for src_lang->tgt_lang and tgt_lang->src_lang,
+    applies back-translation on the specified text column for rows where "new" equals 1,
+    and sets par_id for these augmented rows to 0. Optionally, save the augmented DataFrame as CSV.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing at least the 'text' and 'new' columns.
+        src_lang (str): Source language code (default "en").
+        tgt_lang (str): Target language code (default "fr").
+        text_col (str): Name of the text column (default "text").
+        par_id_col (str): Name of the ID column (default "par_id").
+        output_csv (str): File path to save the augmented DataFrame (default None).
+    
+    Returns:
+        pd.DataFrame: Augmented DataFrame with back-translated text for rows with new==1.
     """
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
-    translated = model.generate(**inputs)
-    translated_text = tokenizer.batch_decode(translated, skip_special_tokens=True)[0]
+    df_aug = df.copy()
+    
+    # Load the translation model for src_lang -> tgt_lang
+    print(f"Loading translation model for {src_lang} -> {tgt_lang}...")
+    model_name_fwd = f"Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}"
+    tokenizer_fwd = MarianTokenizer.from_pretrained(model_name_fwd)
+    model_fwd = MarianMTModel.from_pretrained(model_name_fwd)
+    
+    # Load the translation model for tgt_lang -> src_lang
+    print(f"Loading translation model for {tgt_lang} -> {src_lang}...")
+    model_name_bwd = f"Helsinki-NLP/opus-mt-{tgt_lang}-{src_lang}"
+    tokenizer_bwd = MarianTokenizer.from_pretrained(model_name_bwd)
+    model_bwd = MarianMTModel.from_pretrained(model_name_bwd)
+    
+    def _back_translate(text: str) -> str:
+        """
+        Translate text from src_lang to tgt_lang and back to src_lang.
+        """
+        if not isinstance(text, str) or text.strip() == "":
+            return text
+        # Translate from src_lang to tgt_lang
+        inputs_fwd = tokenizer_fwd(text, return_tensors="pt", padding=True, truncation=True)
+        translated = model_fwd.generate(**inputs_fwd)
+        translated_text = tokenizer_fwd.batch_decode(translated, skip_special_tokens=True)[0]
+        
+        # Translate back from tgt_lang to src_lang
+        inputs_bwd = tokenizer_bwd(translated_text, return_tensors="pt", padding=True, truncation=True)
+        back_translated = model_bwd.generate(**inputs_bwd)
+        back_translated_text = tokenizer_bwd.batch_decode(back_translated, skip_special_tokens=True)[0]
+        return back_translated_text
 
-    # 目标语言 -> 英语
-    model_rev = MarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-fr-en")
-    tokenizer_rev = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-fr-en")
-    inputs_rev = tokenizer_rev(translated_text, return_tensors="pt", padding=True, truncation=True)
-    back_translated = model_rev.generate(**inputs_rev)
-    back_translated_text = tokenizer_rev.batch_decode(back_translated, skip_special_tokens=True)[0]
-
-    return back_translated_text
-
-def apply_back_translation(df):
-    """
-    Apply back-translation only to new upsampled data.
-    :param df: DataFrame with 'text' column
-    :return: Augmented DataFrame
-    """
-    model_name = "Helsinki-NLP/opus-mt-en-fr"
-    tokenizer = MarianTokenizer.from_pretrained(model_name)
-    model = MarianMTModel.from_pretrained(model_name)
-
-    df_aug = df[df["new"] == 1].copy()  # Only new samples
-    df_aug["text"] = df_aug["text"].apply(lambda x: _back_translate(x))
-    df_aug["augmented"] = "back_translation"  # Augmentation type
+    # Apply back-translation only to rows with new==1
+    mask = df_aug["new"] == 1
+    df_aug.loc[mask, text_col] = df_aug.loc[mask, text_col].apply(_back_translate)
+    
     return df_aug
+
+def add_keyword_prefix(df, keyword_col="keyword", text_col="text", new_text_col="combined_text"):
+    """
+    Concatenate the keyword as a prefix to the text.
+    
+    Args:
+        df (pd.DataFrame): Input DataFrame containing at least the columns [keyword, text].
+        keyword_col (str): The column name for keywords.
+        text_col (str): The column name for the text.
+        new_text_col (str): The column name for the combined text.
+        
+    Returns:
+        pd.DataFrame: A new DataFrame with an additional column 'combined_text'
+                      in which each row is formatted as "[keyword] text".
+    """
+    df_copy = df.copy()
+    df_copy[new_text_col] = "<" + df_copy[keyword_col].astype(str) + "> " + df_copy[text_col].astype(str)
+    return df_copy
